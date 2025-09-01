@@ -1396,4 +1396,190 @@ function updatePrediction() {
 }
 
 function updateKPIs() {
-    const monthKeys =
+    const monthKeys = Object.keys(financialData);
+    if (monthKeys.length === 0) return;
+    
+    const avgExpense = monthKeys.reduce((sum, key) => sum + financialData[key].expenses, 0) / monthKeys.length;
+    const currentData = getCurrentMonthData();
+    const totalBudget = Object.values(currentData.categories).reduce((sum, cat) => sum + cat.budget, 0);
+    const efficiency = totalBudget > 0 ? ((totalBudget - currentData.expenses) / totalBudget) * 100 : 0;
+    const savingsRate = currentData.income > 0 ? (currentData.balance / currentData.income) * 100 : 0;
+    
+    document.getElementById('avgExpense').textContent = formatCurrency(avgExpense);
+    document.getElementById('efficiencyRate').textContent = Math.max(0, efficiency).toFixed(1) + '%';
+    document.getElementById('savingsRate').textContent = savingsRate.toFixed(1) + '%';
+}
+
+function createTrendChart() {
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const monthKeys = Object.keys(financialData).sort();
+    
+    if (charts.trend) {
+        charts.trend.destroy();
+    }
+    
+    if (monthKeys.length === 0) {
+        ctx.fillText('Sem dados para exibir', 10, 50);
+        return;
+    }
+    
+    charts.trend = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: monthKeys.map(key => {
+                const [year, month] = key.split('-');
+                return `${monthNames[parseInt(month)]}/${year}`;
+            }),
+            datasets: [{
+                label: 'Receita',
+                data: monthKeys.map(key => financialData[key].income),
+                borderColor: '#27ae60',
+                backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                tension: 0.4
+            }, {
+                label: 'Gastos',
+                data: monthKeys.map(key => financialData[key].expenses),
+                borderColor: '#e74c3c',
+                backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                tension: 0.4
+            }, {
+                label: 'Saldo',
+                data: monthKeys.map(key => financialData[key].balance),
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatCurrency(value);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function createPieChart() {
+    const ctx = document.getElementById('pieChart').getContext('2d');
+    const currentData = getCurrentMonthData();
+    
+    if (charts.pie) {
+        charts.pie.destroy();
+    }
+    
+    const categories = Object.entries(currentData.categories)
+        .filter(([_, data]) => data.spent > 0)
+        .sort(([_, a], [__, b]) => b.spent - a.spent);
+    
+    if (categories.length === 0) {
+        ctx.fillText('Sem gastos para exibir', 10, 50);
+        return;
+    }
+    
+    charts.pie = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: categories.map(([cat, _]) => cat),
+            datasets: [{
+                data: categories.map(([_, data]) => data.spent),
+                backgroundColor: [
+                    '#e74c3c', '#3498db', '#f39c12', '#27ae60', '#9b59b6',
+                    '#1abc9c', '#34495e', '#e67e22', '#95a5a6', '#d35400'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        generateLabels: function(chart) {
+                            const data = chart.data;
+                            if (data.labels.length && data.datasets.length) {
+                                return data.labels.map((label, i) => {
+                                    const value = data.datasets[0].data[i];
+                                    return {
+                                        text: `${label}: ${formatCurrency(value)}`,
+                                        fillStyle: data.datasets[0].backgroundColor[i],
+                                        strokeStyle: data.datasets[0].backgroundColor[i],
+                                        lineWidth: 0,
+                                        index: i
+                                    };
+                                });
+                            }
+                            return [];
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function saveData() {
+    const dataToSave = {
+        financialData: financialData,
+        transactions: transactions,
+        customCategories: customCategories,
+        currentMonth: currentMonth,
+        currentYear: currentYear,
+        viewMonth: viewMonth,
+        viewYear: viewYear,
+        lastSaved: new Date().toISOString()
+    };
+    
+    // Simular salvamento (não usar localStorage conforme instruções)
+    console.log('Dados salvos:', dataToSave);
+}
+
+function loadData() {
+    // Simular carregamento de dados
+    console.log('Carregando dados...');
+    
+    // Inicializar com dados padrão se necessário
+    if (Object.keys(financialData).length === 0) {
+        ensureMonthExists(currentMonth, currentYear);
+    }
+}
+
+        function showAutoSaveIndicator() {
+    const indicator = document.getElementById('autoSaveIndicator');
+    indicator.classList.add('show');
+    setTimeout(() => {
+        indicator.classList.remove('show');
+    }, 2000);
+}
+
+function setupEventListeners() {
+    // Auto-save a cada 30 segundos
+    setInterval(() => {
+        saveData();
+    }, 30000);
+    
+    // Salvar dados ao sair da página
+    window.addEventListener('beforeunload', () => {
+        saveData();
+    });
+}
+
+// Inicializar quando a página carregar
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
+        
