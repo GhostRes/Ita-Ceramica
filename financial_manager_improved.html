@@ -584,6 +584,7 @@
         
         <div class="tabs mobile-scroll">
             <button class="tab active" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" onclick="switchTab('cashflow')">💹 Fluxo de Caixa</button>
             <button class="tab" onclick="switchTab('monthly')">📅 Mensal</button>
             <button class="tab" onclick="switchTab('transactions')">💳 Transações</button>
             <button class="tab" onclick="switchTab('categories')">🏷️ Categorias</button>
@@ -633,6 +634,79 @@
                     <div class="section">
                         <h2>🎯 Metas vs Gastos</h2>
                         <div id="budgetComparison"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cashflow Tab -->
+            <div id="cashflow" class="tab-content">
+                <div class="month-navigation">
+                    <button class="nav-btn" onclick="changeCashflowMonth(-1)">← Anterior</button>
+                    <div class="month-display" id="cashflowMonthDisplay">Agosto 2025</div>
+                    <button class="nav-btn" onclick="changeCashflowMonth(1)">Próximo →</button>
+                </div>
+
+                <div class="summary-cards">
+                    <div class="card income">
+                        <h3>💰 Entradas</h3>
+                        <div class="value" id="cashflowInflows">R$ 0,00</div>
+                        <small>Total de entradas</small>
+                    </div>
+                    <div class="card expense">
+                        <h3>💸 Saídas</h3>
+                        <div class="value" id="cashflowOutflows">R$ 0,00</div>
+                        <small>Total de saídas</small>
+                    </div>
+                    <div class="card balance">
+                        <h3>📊 Fluxo Líquido</h3>
+                        <div class="value" id="cashflowBalance">R$ 0,00</div>
+                        <small>Resultado do fluxo</small>
+                    </div>
+                    <div class="card alert">
+                        <h3>📈 Variação</h3>
+                        <div class="value" id="cashflowVariation">0%</div>
+                        <small>Em relação ao mês anterior</small>
+                    </div>
+                </div>
+
+                <div class="input-section">
+                    <h2>➕ Registrar Movimentação</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="cashflowDescription">Descrição</label>
+                            <input type="text" id="cashflowDescription" placeholder="Ex: Salário, Aluguel, Freelance...">
+                        </div>
+                        <div class="form-group">
+                            <label for="cashflowAmount">Valor (R$)</label>
+                            <input type="number" id="cashflowAmount" step="0.01" placeholder="0,00">
+                        </div>
+                        <div class="form-group">
+                            <label for="cashflowType">Tipo</label>
+                            <select id="cashflowType">
+                                <option value="inflow">Entrada</option>
+                                <option value="outflow">Saída</option>
+                            </select>
+                        </div>
+                        <button class="btn" onclick="addCashflowEntry()">Adicionar</button>
+                    </div>
+                </div>
+
+                <div class="content-grid">
+                    <div class="section">
+                        <h2>💹 Entradas do Mês</h2>
+                        <div id="inflowsList"></div>
+                    </div>
+                    
+                    <div class="section">
+                        <h2>💸 Saídas do Mês</h2>
+                        <div id="outflowsList"></div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h2>📈 Gráfico de Fluxo de Caixa</h2>
+                    <div class="chart-container">
+                        <canvas id="cashflowChart"></canvas>
                     </div>
                 </div>
             </div>
@@ -801,7 +875,10 @@ let currentMonth = new Date().getMonth();
 let currentYear = new Date().getFullYear();
 let viewMonth = currentMonth;
 let viewYear = currentYear;
+let cashflowMonth = currentMonth;
+let cashflowYear = currentYear;
 let transactions = [];
+let cashflowEntries = [];
 let customCategories = [
     { name: 'ALIMENTAÇÃO', budget: 300, isDefault: true },
     { name: 'TRANSPORTE', budget: 200, isDefault: true },
@@ -865,6 +942,12 @@ function getViewMonthData() {
     return financialData[key];
 }
 
+function getCashflowMonthData() {
+    const key = getMonthKey(cashflowMonth, cashflowYear);
+    ensureMonthExists(cashflowMonth, cashflowYear);
+    return financialData[key];
+}
+
 function formatCurrency(value) {
     return new Intl.NumberFormat('pt-BR', {
         style: 'currency',
@@ -890,6 +973,8 @@ function switchTab(tabName) {
         updateMonthlyTab();
     } else if (tabName === 'transactions') {
         updateTransactionsHistory();
+    } else if (tabName === 'cashflow') {
+        updateCashflowTab();
     }
 }
 
@@ -920,6 +1005,20 @@ function changeViewMonth(direction) {
     
     ensureMonthExists(viewMonth, viewYear);
     updateMonthlyTab();
+}
+
+function changeCashflowMonth(direction) {
+    cashflowMonth += direction;
+    if (cashflowMonth > 11) {
+        cashflowMonth = 0;
+        cashflowYear++;
+    } else if (cashflowMonth < 0) {
+        cashflowMonth = 11;
+        cashflowYear--;
+    }
+    
+    ensureMonthExists(cashflowMonth, cashflowYear);
+    updateCashflowTab();
 }
 
 function updateNavigationButtons() {
@@ -954,6 +1053,253 @@ function updateDisplay() {
     updateCategoryExpenses(data.categories);
     updateBudgetComparison(data.categories);
     updateNavigationButtons();
+}
+
+function updateCashflowTab() {
+    // Atualizar display do mês de fluxo de caixa
+    document.getElementById('cashflowMonthDisplay').textContent = 
+        `${monthNames[cashflowMonth]} ${cashflowYear}`;
+    
+    updateCashflowData();
+    updateCashflowLists();
+    createCashflowChart();
+}
+
+function updateCashflowData() {
+    const currentCashflowEntries = cashflowEntries.filter(entry => 
+        entry.month === cashflowMonth && entry.year === cashflowYear
+    );
+    
+    const inflows = currentCashflowEntries
+        .filter(entry => entry.type === 'inflow')
+        .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const outflows = currentCashflowEntries
+        .filter(entry => entry.type === 'outflow')
+        .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const balance = inflows - outflows;
+    
+    // Calcular variação em relação ao mês anterior
+    let prevMonth = cashflowMonth - 1;
+    let prevYear = cashflowYear;
+    if (prevMonth < 0) {
+        prevMonth = 11;
+        prevYear--;
+    }
+    
+    const prevCashflowEntries = cashflowEntries.filter(entry => 
+        entry.month === prevMonth && entry.year === prevYear
+    );
+    
+    const prevInflows = prevCashflowEntries
+        .filter(entry => entry.type === 'inflow')
+        .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const prevOutflows = prevCashflowEntries
+        .filter(entry => entry.type === 'outflow')
+        .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const prevBalance = prevInflows - prevOutflows;
+    const variation = prevBalance !== 0 ? ((balance - prevBalance) / Math.abs(prevBalance)) * 100 : 0;
+    
+    document.getElementById('cashflowInflows').textContent = formatCurrency(inflows);
+    document.getElementById('cashflowOutflows').textContent = formatCurrency(outflows);
+    document.getElementById('cashflowBalance').textContent = formatCurrency(balance);
+    
+    const variationElement = document.getElementById('cashflowVariation');
+    variationElement.textContent = (variation >= 0 ? '+' : '') + variation.toFixed(1) + '%';
+    variationElement.style.color = variation >= 0 ? '#27ae60' : '#e74c3c';
+    
+    // Atualizar cor do saldo
+    const balanceElement = document.getElementById('cashflowBalance');
+    balanceElement.style.color = balance >= 0 ? '#27ae60' : '#e74c3c';
+}
+
+function updateCashflowLists() {
+    const currentEntries = cashflowEntries.filter(entry => 
+        entry.month === cashflowMonth && entry.year === cashflowYear
+    );
+    
+    const inflows = currentEntries.filter(entry => entry.type === 'inflow');
+    const outflows = currentEntries.filter(entry => entry.type === 'outflow');
+    
+    // Atualizar lista de entradas
+    const inflowsContainer = document.getElementById('inflowsList');
+    inflowsContainer.innerHTML = '';
+    
+    if (inflows.length === 0) {
+        inflowsContainer.innerHTML = '<p style="text-align: center; color: #7f8c8d;">Nenhuma entrada registrada neste mês.</p>';
+    } else {
+        inflows.forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'expense-item';
+            item.innerHTML = `
+                <span class="category">${entry.description}</span>
+                <div>
+                    <span class="amount" style="color: #27ae60;">${formatCurrency(entry.amount)}</span>
+                    <button class="btn btn-danger btn-small" onclick="removeCashflowEntry(${entry.id})" style="margin-left: 10px;">Remover</button>
+                </div>
+            `;
+            inflowsContainer.appendChild(item);
+        });
+    }
+    
+    // Atualizar lista de saídas
+    const outflowsContainer = document.getElementById('outflowsList');
+    outflowsContainer.innerHTML = '';
+    
+    if (outflows.length === 0) {
+        outflowsContainer.innerHTML = '<p style="text-align: center; color: #7f8c8d;">Nenhuma saída registrada neste mês.</p>';
+    } else {
+        outflows.forEach(entry => {
+            const item = document.createElement('div');
+            item.className = 'expense-item';
+            item.innerHTML = `
+                <span class="category">${entry.description}</span>
+                <div>
+                    <span class="amount" style="color: #e74c3c;">${formatCurrency(entry.amount)}</span>
+                    <button class="btn btn-danger btn-small" onclick="removeCashflowEntry(${entry.id})" style="margin-left: 10px;">Remover</button>
+                </div>
+            `;
+            outflowsContainer.appendChild(item);
+        });
+    }
+}
+
+function addCashflowEntry() {
+    const description = document.getElementById('cashflowDescription').value.trim();
+    const amount = parseFloat(document.getElementById('cashflowAmount').value);
+    const type = document.getElementById('cashflowType').value;
+    
+    if (!description || !amount || amount <= 0) {
+        alert('Por favor, preencha todos os campos com valores válidos');
+        return;
+    }
+    
+    const entry = {
+        id: Date.now(),
+        description,
+        amount,
+        type,
+        month: cashflowMonth,
+        year: cashflowYear,
+        date: new Date().toISOString()
+    };
+    
+    cashflowEntries.push(entry);
+    
+    // Limpar formulário
+    document.getElementById('cashflowDescription').value = '';
+    document.getElementById('cashflowAmount').value = '';
+    
+    updateCashflowData();
+    updateCashflowLists();
+    createCashflowChart();
+    saveData();
+    showAutoSaveIndicator();
+}
+
+function removeCashflowEntry(entryId) {
+    const entryIndex = cashflowEntries.findIndex(entry => entry.id === entryId);
+    if (entryIndex !== -1) {
+        cashflowEntries.splice(entryIndex, 1);
+        updateCashflowData();
+        updateCashflowLists();
+        createCashflowChart();
+        saveData();
+        showAutoSaveIndicator();
+    }
+}
+
+function createCashflowChart() {
+    const ctx = document.getElementById('cashflowChart').getContext('2d');
+    
+    if (charts.cashflow) {
+        charts.cashflow.destroy();
+    }
+    
+    // Obter dados dos últimos 6 meses
+    const monthsData = [];
+    for (let i = 5; i >= 0; i--) {
+        let month = cashflowMonth - i;
+        let year = cashflowYear;
+        
+        while (month < 0) {
+            month += 12;
+            year--;
+        }
+        
+        const entries = cashflowEntries.filter(entry => 
+            entry.month === month && entry.year === year
+        );
+        
+        const inflows = entries
+            .filter(entry => entry.type === 'inflow')
+            .reduce((sum, entry) => sum + entry.amount, 0);
+        
+        const outflows = entries
+            .filter(entry => entry.type === 'outflow')
+            .reduce((sum, entry) => sum + entry.amount, 0);
+        
+        monthsData.push({
+            label: `${monthNames[month]}/${year}`,
+            inflows,
+            outflows,
+            balance: inflows - outflows
+        });
+    }
+    
+    charts.cashflow = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: monthsData.map(data => data.label),
+            datasets: [{
+                label: 'Entradas',
+                data: monthsData.map(data => data.inflows),
+                backgroundColor: '#27ae60',
+                borderColor: '#27ae60',
+                borderWidth: 1
+            }, {
+                label: 'Saídas',
+                data: monthsData.map(data => data.outflows),
+                backgroundColor: '#e74c3c',
+                borderColor: '#e74c3c',
+                borderWidth: 1
+            }, {
+                label: 'Fluxo Líquido',
+                data: monthsData.map(data => data.balance),
+                type: 'line',
+                borderColor: '#3498db',
+                backgroundColor: 'rgba(52, 152, 219, 0.1)',
+                borderWidth: 3,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatCurrency(value);
+                        }
+                    }
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'index'
+            }
+        }
+    });
 }
 
 function updateAlerts(categories) {
@@ -1535,11 +1881,14 @@ function saveData() {
     const dataToSave = {
         financialData: financialData,
         transactions: transactions,
+        cashflowEntries: cashflowEntries,
         customCategories: customCategories,
         currentMonth: currentMonth,
         currentYear: currentYear,
         viewMonth: viewMonth,
         viewYear: viewYear,
+        cashflowMonth: cashflowMonth,
+        cashflowYear: cashflowYear,
         lastSaved: new Date().toISOString()
     };
     
@@ -1557,7 +1906,7 @@ function loadData() {
     }
 }
 
-        function showAutoSaveIndicator() {
+function showAutoSaveIndicator() {
     const indicator = document.getElementById('autoSaveIndicator');
     indicator.classList.add('show');
     setTimeout(() => {
